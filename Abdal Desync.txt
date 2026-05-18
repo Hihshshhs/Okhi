@@ -1,7 +1,6 @@
--- MAXIMUM FPS BOOSTER
+-- MAX FPS FOR STEAL A BRAINROT
 
 local Lighting = game:GetService("Lighting")
-local RunService = game:GetService("RunService")
 
 -- =============================================
 -- LIGHTING
@@ -13,57 +12,78 @@ Lighting.Ambient = Color3.fromRGB(150, 150, 150)
 Lighting.OutdoorAmbient = Color3.fromRGB(150, 150, 150)
 Lighting.ClockTime = 14
 
+-- Only remove post processing, keep sky
 for _, v in ipairs(Lighting:GetChildren()) do
-    v:Destroy()
+    if v:IsA("Atmosphere") or
+       v:IsA("BlurEffect") or
+       v:IsA("SunRaysEffect") or
+       v:IsA("ColorCorrectionEffect") or
+       v:IsA("DepthOfFieldEffect") or
+       v:IsA("BloomEffect") then
+        pcall(function() v:Destroy() end)
+    end
 end
 
 -- =============================================
--- STRIP EVERYTHING
+-- GRAPHICS
 -- =============================================
+settings().Rendering.QualityLevel = 1
+
+-- =============================================
+-- STRIP WORKSPACE (safe - skips player/GUI stuff)
+-- =============================================
+local function isPlayerRelated(obj)
+    local current = obj
+    while current do
+        if current:IsA("Model") then
+            local humanoid = current:FindFirstChildOfClass("Humanoid")
+            if humanoid then return true end
+        end
+        current = current.Parent
+    end
+    return false
+end
+
 local function nuke(obj)
     for _, v in ipairs(obj:GetDescendants()) do
-        -- Kill all effects
-        if v:IsA("ParticleEmitter") or
-           v:IsA("Trail") or
-           v:IsA("Smoke") or
-           v:IsA("Fire") or
-           v:IsA("Sparkles") or
-           v:IsA("BillboardGui") or
-           v:IsA("SurfaceGui") or
-           v:IsA("SelectionBox") then
-            pcall(function() v:Destroy() end)
+        if isPlayerRelated(v) then continue end
 
-        -- Kill textures
-        elseif v:IsA("Texture") or v:IsA("Decal") then
-            pcall(function() v.Transparency = 1 end)
+        pcall(function()
+            if v:IsA("ParticleEmitter") or
+               v:IsA("Trail") or
+               v:IsA("Smoke") or
+               v:IsA("Fire") or
+               v:IsA("Sparkles") then
+                v.Enabled = false
 
-        elseif v:IsA("SpecialMesh") then
-            pcall(function() v.TextureId = "" end)
+            elseif v:IsA("Texture") or v:IsA("Decal") then
+                v.Transparency = 1
 
-        -- Simplify all parts
-        elseif v:IsA("BasePart") then
-            pcall(function()
+            elseif v:IsA("SpecialMesh") then
+                v.TextureId = ""
+
+            elseif v:IsA("BasePart") and not v:IsA("SpawnLocation") then
                 v.Material = Enum.Material.SmoothPlastic
                 v.Reflectance = 0
                 v.CastShadow = false
-            end)
-        end
+            end
+        end)
     end
 end
 
 nuke(workspace)
 
--- Catch anything added later
+-- Catch new stuff added later
 workspace.DescendantAdded:Connect(function(v)
+    if isPlayerRelated(v) then return end
+
     pcall(function()
         if v:IsA("ParticleEmitter") or
            v:IsA("Trail") or
            v:IsA("Smoke") or
            v:IsA("Fire") or
-           v:IsA("Sparkles") or
-           v:IsA("BillboardGui") or
-           v:IsA("SurfaceGui") then
-            v:Destroy()
+           v:IsA("Sparkles") then
+            v.Enabled = false
 
         elseif v:IsA("Texture") or v:IsA("Decal") then
             v.Transparency = 1
@@ -79,21 +99,4 @@ workspace.DescendantAdded:Connect(function(v)
     end)
 end)
 
--- =============================================
--- GRAPHICS QUALITY
--- =============================================
-settings().Rendering.QualityLevel = 1
-
--- =============================================
--- SKIP RENDERING HEAVY OBJECTS
--- =============================================
-for _, v in ipairs(workspace:GetDescendants()) do
-    if v:IsA("MeshPart") or v:IsA("UnionOperation") then
-        pcall(function()
-            v.CastShadow = false
-            v.Material = Enum.Material.SmoothPlastic
-        end)
-    end
-end
-
-print("✅ Max FPS mode active — everything stripped")
+print("✅ FPS Boost active - game safe")
