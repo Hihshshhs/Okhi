@@ -1,5 +1,5 @@
 -- =============================================
--- STEAL A BRAINROT - MAX FPS OPTIMIZER
+-- STEAL A BRAINROT - MAX FPS OPTIMIZER (FIXED)
 -- =============================================
 
 local Threads = {}
@@ -18,7 +18,7 @@ local function AddThread(f) table.insert(Threads, task.spawn(f)) end
 local function AddConnection(c) table.insert(Connections, c) end
 
 -- =============================================
--- SAFE NAMES - NEVER DESTROY THESE
+-- SAFE NAMES - NEVER DESTROY
 -- =============================================
 local SafeNames = {
     ["Overhead"]    = true,
@@ -26,10 +26,22 @@ local SafeNames = {
     ["YourBase"]    = true,
     ["PlotSign"]    = true,
     ["NameTag"]     = true,
+    ["Spawn"]       = true,   -- FIX: game uses this on podiums
+    ["Base"]        = true,   -- FIX: plot base models
+    ["SpawnLocation"] = true,
+}
+
+local SafeClasses = {
+    ["ProximityPrompt"] = true,
+    ["BillboardGui"]    = true,
+    ["ScreenGui"]       = true,
+    ["SurfaceGui"]      = true,
+    ["SpawnLocation"]   = true,
 }
 
 local function SafeDestroy(obj)
     if SafeNames[obj.Name] then return end
+    if SafeClasses[obj.ClassName] then return end
     pcall(function() obj:Destroy() end)
 end
 
@@ -45,18 +57,17 @@ local function IsCharacterPart(obj)
 end
 
 local function IsGameCritical(obj)
-    -- Never touch proximity prompts, billboards, plot signs, screenguis
-    if obj:IsA("ProximityPrompt") then return true end
-    if obj:IsA("BillboardGui") then return true end
-    if obj:IsA("ScreenGui") then return true end
-    if obj:IsA("SurfaceGui") then return true end
+    if SafeClasses[obj.ClassName] then return true end
     if SafeNames[obj.Name] then return true end
 
-    -- Walk up tree and check parents
+    -- Walk up tree
     local p = obj.Parent
     while p and p ~= workspace do
         if SafeNames[p.Name] then return true end
-        if p:IsA("ScreenGui") then return true end
+        if SafeClasses[p.ClassName] then return true end
+        -- Protect anything inside AnimalPodiums
+        if p.Name == "AnimalPodiums" then return true end
+        if p.Name == "PlotSign" then return true end
         p = p.Parent
     end
 
@@ -86,17 +97,14 @@ local function CleanObject(obj)
         elseif obj:IsA("SpecialMesh") then
             obj.TextureId = ""
 
-        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail")
-            or obj:IsA("Beam") then
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") then
             pcall(function() obj.Enabled = false end)
             SafeDestroy(obj)
 
-        elseif obj:IsA("PointLight") or obj:IsA("SpotLight")
-            or obj:IsA("SurfaceLight") then
+        elseif obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
             SafeDestroy(obj)
 
-        elseif obj:IsA("Fire") or obj:IsA("Smoke")
-            or obj:IsA("Sparkles") or obj:IsA("Explosion") then
+        elseif obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") or obj:IsA("Explosion") then
             pcall(function() obj.Enabled = false end)
             SafeDestroy(obj)
 
@@ -153,7 +161,6 @@ local function OptimizeLighting()
         end
     end
 
-    -- Flat grey sky (cheaper than default)
     local sky = Instance.new("Sky")
     sky.SkyboxBk = "" sky.SkyboxDn = "" sky.SkyboxFt = ""
     sky.SkyboxLf = "" sky.SkyboxRt = "" sky.SkyboxUp = ""
@@ -236,7 +243,7 @@ AddConnection(workspace.DescendantAdded:Connect(function(obj)
 end))
 
 -- =============================================
--- LIGHTING GUARD (prevents game re-adding effects)
+-- LIGHTING GUARD
 -- =============================================
 AddConnection(Services.Lighting.DescendantAdded:Connect(function(obj)
     if obj:IsA("Atmosphere") or obj:IsA("Clouds") or obj:IsA("PostEffect") then
