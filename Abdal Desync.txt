@@ -1,0 +1,185 @@
+local player = game.Players.LocalPlayer
+local UIS = game:GetService("UserInputService")
+
+local function getHumanoid()
+	local char = player.Character or player.CharacterAdded:Wait()
+	return char:WaitForChild("Humanoid")
+end
+
+local humanoid = getHumanoid()
+
+-- GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Parent = player:WaitForChild("PlayerGui")
+
+
+local Main = Instance.new("Frame")
+Main.Size = UDim2.new(0, 280, 0, 145)
+Main.Position = UDim2.new(0.5, -140, 0.5, -72)
+Main.BackgroundColor3 = Color3.fromRGB(10, 25, 15) -- transparent dark green
+Main.Parent = ScreenGui
+Main.AnchorPoint = Vector2.new(0.5,0.5)
+
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
+
+local Stroke = Instance.new("UIStroke", Main)
+Stroke.Color = Color3.fromRGB(20, 100, 40) -- dark green stroke
+Stroke.Thickness = 2
+
+
+local TitleBar = Instance.new("Frame", Main)
+TitleBar.Size = UDim2.new(1, 0, 0, 40)
+TitleBar.BackgroundTransparency = 1
+
+local Title = Instance.new("TextLabel", TitleBar)
+Title.Size = UDim2.new(1, -80, 1, 0)
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "ABDAL DESYNC"
+Title.TextColor3 = Color3.fromRGB(20, 100, 40) -- dark green text
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 18
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+
+local MinBtn = Instance.new("TextButton", TitleBar)
+MinBtn.Size = UDim2.new(0, 30, 0, 30)
+MinBtn.Position = UDim2.new(1, -70, 0.5, -15)
+MinBtn.Text = "-"
+MinBtn.BackgroundColor3 = Color3.fromRGB(20, 40, 25)
+MinBtn.TextColor3 = Color3.fromRGB(20, 100, 40) -- dark green text
+MinBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0,8)
+
+local CloseBtn = Instance.new("TextButton", TitleBar)
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -35, 0.5, -15)
+CloseBtn.Text = "X"
+CloseBtn.BackgroundColor3 = Color3.fromRGB(20, 40, 25)
+CloseBtn.TextColor3 = Color3.fromRGB(20, 100, 40) -- dark green text
+CloseBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0,8)
+
+
+local Content = Instance.new("Frame", Main)
+Content.Size = UDim2.new(1, 0, 1, -40)
+Content.Position = UDim2.new(0, 0, 0, 40)
+Content.BackgroundTransparency = 1
+
+
+local StatusFrame = Instance.new("Frame", Content)
+StatusFrame.Size = UDim2.new(1, -20, 0, 40)
+StatusFrame.Position = UDim2.new(0, 10, 0, 10)
+StatusFrame.BackgroundColor3 = Color3.fromRGB(15, 35, 20) -- transparent dark green
+Instance.new("UICorner", StatusFrame).CornerRadius = UDim.new(0, 10)
+
+local Dot = Instance.new("Frame", StatusFrame)
+Dot.Size = UDim2.new(0,10,0,10)
+Dot.Position = UDim2.new(0,10,0.5,-5)
+Dot.BackgroundColor3 = Color3.fromRGB(0,255,120)
+Instance.new("UICorner", Dot).CornerRadius = UDim.new(1,0)
+
+local StatusText = Instance.new("TextLabel", StatusFrame)
+StatusText.Size = UDim2.new(1, -30, 1, 0)
+StatusText.Position = UDim2.new(0, 25, 0, 0)
+StatusText.BackgroundTransparency = 1
+StatusText.Text = "Hook active â?" packets intercepted"
+StatusText.TextColor3 = Color3.fromRGB(180, 180, 180) -- Light gray
+StatusText.Font = Enum.Font.Gotham
+StatusText.TextSize = 14
+StatusText.TextXAlignment = Enum.TextXAlignment.Left
+
+
+local ToggleFrame = Instance.new("Frame", Content)
+ToggleFrame.Size = UDim2.new(1, -20, 0, 60)
+ToggleFrame.Position = UDim2.new(0, 10, 0, 60)
+ToggleFrame.BackgroundColor3 = Color3.fromRGB(15, 35, 20) -- transparent dark green
+Instance.new("UICorner", ToggleFrame).CornerRadius = UDim.new(0, 10)
+
+local UnwalkTitle = Instance.new("TextLabel", ToggleFrame)
+UnwalkTitle.Size = UDim2.new(0.6, 0, 0, 25)
+UnwalkTitle.Position = UDim2.new(0, 15, 0, 10)
+UnwalkTitle.BackgroundTransparency = 1
+UnwalkTitle.Text = "DESYNC"
+UnwalkTitle.TextColor3 = Color3.fromRGB(20, 100, 40) -- dark green
+UnwalkTitle.Font = Enum.Font.GothamBold
+UnwalkTitle.TextSize = 18
+UnwalkTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local UnwalkDesc = Instance.new("TextLabel", ToggleFrame)
+UnwalkDesc.Size = UDim2.new(0.6, 0, 0, 15)
+UnwalkDesc.Position = UDim2.new(0, 15, 0, 32)
+UnwalkDesc.BackgroundTransparency = 1
+UnwalkDesc.Text = "Freeze animation tracks"
+UnwalkDesc.TextColor3 = Color3.fromRGB(130, 130, 140) -- Muted gray
+UnwalkDesc.Font = Enum.Font.Gotham
+UnwalkDesc.TextSize = 12
+UnwalkDesc.TextXAlignment = Enum.TextXAlignment.Left
+
+local ToggleButton = Instance.new("TextButton", ToggleFrame)
+ToggleButton.Size = UDim2.new(0, 50, 0, 25)
+ToggleButton.Position = UDim2.new(1, -65, 0.5, -12)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(20, 100, 40) -- dark green
+ToggleButton.Text = ""
+Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(1,0)
+
+local Circle = Instance.new("Frame", ToggleButton)
+Circle.Size = UDim2.new(0, 20, 0, 20)
+Circle.Position = UDim2.new(1, -22, 0.5, -10)
+Circle.BackgroundColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", Circle).CornerRadius = UDim.new(1,0)
+
+
+local enabled = true
+local animConnection
+
+local function stopAnims(hum)
+	for _, track in pairs(hum:GetPlayingAnimationTracks()) do track:Stop() end
+end
+
+ToggleButton.Activated:Connect(function()
+	enabled = not enabled
+	humanoid = getHumanoid()
+
+	if enabled then
+		ToggleButton.BackgroundColor3 = Color3.fromRGB(20, 100, 40) -- dark green
+		Circle:TweenPosition(UDim2.new(1, -22, 0.5, -10), "Out", "Quad", 0.2, true)
+		Dot.BackgroundColor3 = Color3.fromRGB(0,255,120)
+		StatusText.Text = "Hook active â?" packets intercepted"
+
+		stopAnims(humanoid)
+		animConnection = humanoid.AnimationPlayed:Connect(function(t) t:Stop() end)
+
+		if raknet and raknet.desync then raknet.desync(true) end
+		print("leak by Lacsy on dc\nLeak Factions desync by Lacsy")
+	else
+		ToggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40) -- Dark gray
+		Circle:TweenPosition(UDim2.new(0, 2, 0.5, -10), "Out", "Quad", 0.2, true)
+		Dot.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+		StatusText.Text = "Desync inactive â?" no interception"
+
+		if animConnection then animConnection:Disconnect() animConnection = nil end
+		if raknet and raknet.desync then raknet.desync(false) end
+	end
+end)
+
+
+MinBtn.Activated:Connect(function()
+	Main:TweenSize(Content.Visible and UDim2.new(0, 280, 0, 45) or UDim2.new(0, 280, 0, 145), "Out", "Quad", 0.25, true)
+	Content.Visible = not Content.Visible
+end)
+CloseBtn.Activated:Connect(function() ScreenGui:Destroy() end)
+
+local dragging, dragStart, startPos
+TitleBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging, dragStart, startPos = true, input.Position, Main.Position
+		input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+	end
+end)
+UIS.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - dragStart
+		Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
