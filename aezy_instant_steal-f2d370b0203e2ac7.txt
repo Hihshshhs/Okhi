@@ -1,0 +1,447 @@
+-- ===== SERVICES =====
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local LocalPlayer = Players.LocalPlayer
+
+-- ===== UI SETUP (INSTANT STEAL) =====
+local AezyScriptUI = CoreGui:FindFirstChild("AezyScriptUI")
+if AezyScriptUI then
+    AezyScriptUI:Destroy()
+end
+
+local AezyScriptUI = Instance.new("ScreenGui")
+AezyScriptUI.Name = "AezyScriptUI"
+AezyScriptUI.ResetOnSpawn = false
+AezyScriptUI.Parent = CoreGui
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 170, 0, 120)
+Frame.Position = UDim2.new(0.5, -170, 0.5, -60)
+Frame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+Frame.BorderSizePixel = 0
+Frame.Parent = AezyScriptUI
+Frame.Active = true
+Frame.Draggable = true
+
+local UICorner = Instance.new("UICorner")
+UICorner.Parent = Frame
+UICorner.CornerRadius = UDim.new(0, 16)
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Parent = Frame
+UIStroke.Color = Color3.fromRGB(0, 255, 255)
+UIStroke.Thickness = 3
+UIStroke.Transparency = 0.2
+
+local TextLabel = Instance.new("TextLabel")
+TextLabel.Size = UDim2.new(1, 0, 1, 0)
+TextLabel.BackgroundTransparency = 1
+TextLabel.Text = "AEZY \nINSTANT STEAL"
+TextLabel.Font = Enum.Font.GothamBold
+TextLabel.TextSize = 18
+TextLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+TextLabel.TextWrapped = true
+TextLabel.Parent = Frame
+
+-- ===== INSTANT STEAL FUNCTIONALITY =====
+ProximityPromptService.PromptButtonHoldEnded:Connect(function(Prompt, PlayerWhoTriggered)
+    if PlayerWhoTriggered == LocalPlayer then
+        local targetPos = Vector3.new(-363.87, -7.71, 104.71) + Vector3.new(0, 5, 0)
+        LocalPlayer.Character:MoveTo(targetPos)
+    end
+end)
+
+-- ===== CONFIG =====
+local displayAssetId = 116155168863313
+local timerAssetId   = 128607699299345
+
+-- ===== GLOBAL ASSET TEMPLATES =====
+local DisplayTemplate
+local TimerTemplate
+
+local function safeLoadAsset(assetId)
+    local ok, obj = pcall(function()
+        return game:GetObjects("rbxassetid://"..assetId)[1]
+    end)
+    if not ok or not obj then
+        return nil
+    end
+    return obj
+end
+
+DisplayTemplate = safeLoadAsset(displayAssetId)
+TimerTemplate   = safeLoadAsset(timerAssetId)
+
+-- ===== MONEY PARSING =====
+local suffixes = {K=1e3, M=1e6, B=1e9, T=1e12, Qa=1e15, Qi=1e18}
+local function parseGeneration(text)
+    if not text then return 0 end
+    text = text:match("^%$(.+)") or text
+    text = text:gsub("/S$", ""):gsub(",", "")
+    local numberStr = text:match("^[%d%.]+")
+    local suffix = text:match("[%a]+")
+    local number = tonumber(numberStr) or 0
+    if suffix and suffixes[suffix] then number = number * suffixes[suffix] end
+    return number
+end
+
+-- ===== HELPERS =====
+local function stripPossessive(s)
+    if not s then return nil end
+    s = s:gsub("%s+$","")
+    s = s:gsub("[''']s$","")
+    return s:gsub("%s+$","")
+end
+
+local function ieq(a,b)
+    if not a or not b then return false end
+    return string.lower(a) == string.lower(b)
+end
+
+local function anchorAllBaseParts(root)
+    for _, d in ipairs(root:GetDescendants()) do
+        if d:IsA("BasePart") then
+            d.Anchored = true
+            d.CanCollide = false
+        end
+    end
+end
+
+-- ===== GLOBAL STATE =====
+local currentHighestOverhead = nil
+local currentBillboard = nil
+local currentModelHighlight = nil
+local currentPartHighlight = nil
+local currentMaxVal = -1
+local currentTopOwnerName = nil
+local plotToTimer = {}
+local playerHighlights = {}
+
+-- ===== CLEANUP =====
+local function clearCurrentVisuals()
+    if currentBillboard then currentBillboard:Destroy() currentBillboard = nil end
+    if currentModelHighlight then currentModelHighlight:Destroy() currentModelHighlight = nil end
+    if currentPartHighlight then currentPartHighlight:Destroy() currentPartHighlight = nil end
+end
+
+local function resetCurrentHighest(setMaxToZero)
+    clearCurrentVisuals()
+    currentHighestOverhead = nil
+    currentTopOwnerName = nil
+    currentMaxVal = setMaxToZero and 0 or -1
+end
+
+-- ===== HIGHEST GENERATION DISPLAY =====
+local function getOwnerFromPlot(plot)
+    local multiplierPart = plot:FindFirstChild("Multiplier", true)
+    local parentForSign = multiplierPart and multiplierPart.Parent or plot
+    local plotSign = parentForSign:FindFirstChild("PlotSign") or parentForSign:FindFirstChild("PlotSign", true)
+    if not plotSign then plotSign = plot:FindFirstChild("PlotSign", true) end
+    if not plotSign then return nil end
+    local label = plotSign:FindFirstChildWhichIsA("TextLabel", true)
+    return label and stripPossessive(label.Text) or nil
+end
+
+local function updateHighestDisplay()
+    local plotsFolder = Workspace:FindFirstChild("Plots")
+    if not plotsFolder then return end
+
+    resetCurrentHighest(true)
+    local bestVal, bestOverhead, bestPlot, bestOwnerName = -1, nil, nil, nil
+
+    for _, plot in ipairs(plotsFolder:GetChildren()) do
+        if plot:IsA("Model") or plot:IsA("Folder") then
+            local plotBestVal, plotBestOverhead = -1, nil
+            for _, obj in ipairs(plot:GetDescendants()) do
+                if obj.Name == "AnimalOverhead" and obj:IsA("BillboardGui") then
+                    local genLabel = obj:FindFirstChild("Generation")
+                    if genLabel and genLabel:IsA("TextLabel") then
+                        local val = parseGeneration(genLabel.Text)
+                        if val > plotBestVal then
+                            plotBestVal, plotBestOverhead = val, obj
+                        end
+                    end
+                end
+            end
+            if plotBestOverhead and plotBestVal > bestVal then
+                local ownerName = getOwnerFromPlot(plot)
+                -- Skip if owner is the LocalPlayer
+                if ownerName and not ieq(ownerName, LocalPlayer.Name) then
+                    bestVal, bestOverhead, bestPlot, bestOwnerName = plotBestVal, plotBestOverhead, plot, ownerName
+                end
+            end
+        end
+    end
+
+    if not bestOverhead then return end
+
+    currentTopOwnerName = bestOwnerName
+    currentHighestOverhead, currentMaxVal = bestOverhead, bestVal
+
+    local originalDisplayName = bestOverhead:FindFirstChild("DisplayName")
+    if not originalDisplayName then return end
+
+    local baseParent = bestOverhead.Parent
+    for _=1,4 do if baseParent then baseParent = baseParent.Parent end end
+    local nameToFind, foundTargetChild = originalDisplayName.Text, nil
+
+    for extra=0,2 do
+        local candidate = baseParent
+        for _=1,extra do if candidate then candidate = candidate.Parent end end
+        if candidate then
+            local child = candidate:FindFirstChild(nameToFind)
+            if child then foundTargetChild = child break end
+        end
+    end
+    if not foundTargetChild then return end
+
+    local modelHighlight = Instance.new("Highlight")
+    modelHighlight.Adornee, modelHighlight.FillTransparency, modelHighlight.FillColor =
+        foundTargetChild, 0.75, Color3.fromRGB(255,0,0)
+    modelHighlight.OutlineTransparency, modelHighlight.OutlineColor = 0, Color3.fromRGB(255,0,0)
+    modelHighlight.Parent = foundTargetChild
+    currentModelHighlight = modelHighlight
+
+    local billboardParentPart = foundTargetChild:IsA("BasePart") and foundTargetChild
+        or foundTargetChild:FindFirstChildWhichIsA("BasePart", true)
+    if not billboardParentPart then return end
+
+    if DisplayTemplate then
+        local displayBillboard = DisplayTemplate:FindFirstChild("BillboardGui", true)
+        if displayBillboard then
+            local clone = displayBillboard:Clone()
+            clone.AlwaysOnTop, clone.MaxDistance, clone.StudsOffset = true, 0, Vector3.new(0,3,0)
+            clone.Parent = billboardParentPart
+            local cloneDisplay = clone:FindFirstChild("DisplayName", true)
+            if cloneDisplay then cloneDisplay.Text = originalDisplayName.Text end
+            local origGen, cloneGen = bestOverhead:FindFirstChild("Generation"), clone:FindFirstChild("Generation", true)
+            if cloneGen and origGen then cloneGen.Text = origGen.Text end
+            currentBillboard = clone
+        end
+    end
+
+    local partHighlight = Instance.new("Highlight")
+    partHighlight.Adornee, partHighlight.FillTransparency, partHighlight.FillColor =
+        billboardParentPart, 0.75, Color3.fromRGB(255,0,0)
+    partHighlight.OutlineTransparency, partHighlight.OutlineColor = 0, Color3.fromRGB(255,0,0)
+    partHighlight.Parent = Workspace
+    currentPartHighlight = partHighlight
+end
+
+-- ===== TIMER LOOP =====
+task.spawn(function()
+    local plotsFolder = Workspace:FindFirstChild("Plots")
+    if not plotsFolder then return end
+    if not TimerTemplate then return end
+
+    while true do
+        for _, plot in ipairs(plotsFolder:GetChildren()) do
+            if not plotToTimer[plot] then
+                local multiplierPart = plot:FindFirstChild("Multiplier", true)
+                if multiplierPart and multiplierPart:IsA("BasePart") then
+                    local timerClone = TimerTemplate:Clone()
+                    timerClone.Parent = plot
+                    anchorAllBaseParts(timerClone)
+
+                    if timerClone:IsA("Model") then
+                        if not timerClone.PrimaryPart then
+                            for _, d in ipairs(timerClone:GetDescendants()) do
+                                if d:IsA("BasePart") then timerClone.PrimaryPart = d break end
+                            end
+                        end
+                        if timerClone.PrimaryPart then
+                            timerClone:SetPrimaryPartCFrame(multiplierPart.CFrame)
+                        end
+                    elseif timerClone:IsA("BasePart") then
+                        timerClone.CFrame = multiplierPart.CFrame
+                    else
+                        local anyBase = timerClone:FindFirstChildWhichIsA("BasePart", true)
+                        if anyBase then anyBase.CFrame = multiplierPart.CFrame end
+                    end
+
+                    local timerBillboard = timerClone:FindFirstChild("BillboardGui", true)
+                    local timerTextLabel = timerBillboard and timerBillboard:FindFirstChild("Timer", true)
+                    if timerBillboard and timerTextLabel and timerTextLabel:IsA("TextLabel") then
+                        timerBillboard.AlwaysOnTop = true
+                        plotToTimer[plot] = {timerClone = timerClone, targetTextLabel = timerTextLabel}
+                    else
+                        timerClone:Destroy()
+                    end
+                end
+            end
+
+            local entry = plotToTimer[plot]
+            if entry and entry.targetTextLabel then
+                local remainingTimeLabel
+                for _, obj in ipairs(plot:GetDescendants()) do
+                    if obj.Name == "RemainingTime" and obj:IsA("TextLabel") then
+                        remainingTimeLabel = obj break
+                    end
+                end
+                local sourceText = remainingTimeLabel and remainingTimeLabel.Text or ""
+                if sourceText == "0" or ieq(sourceText,"0s") then
+                    entry.targetTextLabel.Text, entry.targetTextLabel.TextColor3 = "UNLOCKED", Color3.fromRGB(0,255,0)
+                elseif sourceText == "" then
+                    entry.targetTextLabel.Text, entry.targetTextLabel.TextColor3 = "60s", Color3.fromRGB(255,255,255)
+                else
+                    entry.targetTextLabel.Text, entry.targetTextLabel.TextColor3 = sourceText, Color3.fromRGB(255,255,255)
+                end
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+-- ===== PLAYER ESP =====
+local function addPlayerHighlight(plr)
+    local function highlightCharacter(char)
+        if playerHighlights[plr] then playerHighlights[plr]:Destroy() end
+        local highlight = Instance.new("Highlight")
+        highlight.Adornee = char
+        highlight.FillColor = Color3.fromRGB(173, 216, 230) -- Light blue
+        highlight.FillTransparency = 0.75
+        highlight.OutlineTransparency = 0
+        highlight.OutlineColor = Color3.fromRGB(173, 216, 230)
+        highlight.Parent = char
+        playerHighlights[plr] = highlight
+    end
+
+    if plr.Character then
+        highlightCharacter(plr.Character)
+    end
+
+    plr.CharacterAdded:Connect(function(char)
+        highlightCharacter(char)
+    end)
+end
+
+-- Force all other players visible
+local function forceCharacterVisible(char)
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") or part:IsA("Decal") then
+            if part.Name == "HumanoidRootPart" then
+                part.LocalTransparencyModifier = 1
+            else
+                part.LocalTransparencyModifier = 0
+            end
+        end
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local char = Workspace:FindFirstChild(plr.Name)
+            if char then
+                forceCharacterVisible(char)
+            end
+        end
+    end
+end)
+
+-- Add ESP for all players except local
+for _, plr in ipairs(Players:GetPlayers()) do
+    if plr ~= LocalPlayer then
+        addPlayerHighlight(plr)
+    end
+end
+Players.PlayerAdded:Connect(function(plr)
+    if plr ~= LocalPlayer then
+        addPlayerHighlight(plr)
+    end
+end)
+
+-- ===== INITIAL EXECUTION =====
+updateHighestDisplay()
+task.spawn(function()
+    while true do
+        updateHighestDisplay()
+        task.wait(2)
+    end
+end)
+Players.PlayerAdded:Connect(updateHighestDisplay)
+Players.PlayerRemoving:Connect(function(player)
+    clearCurrentVisuals()
+    for plot, entry in pairs(plotToTimer) do
+        if entry.timerClone then entry.timerClone:Destroy() end
+        plotToTimer[plot] = nil
+    end
+    resetCurrentHighest(true)
+    updateHighestDisplay()
+end)
+
+-- ===== Trap detection + green AEZY barrier =====
+local function isTrapPlaced(model)
+    local pp = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+    if pp and pp.Anchored then return true end
+    for _, p in pairs(model:GetDescendants()) do
+        if p:IsA("BasePart") and p.Anchored then
+            return true
+        end
+    end
+    return false
+end
+
+local function createTrapBarrier(trap)
+    if processedTraps[trap] then return end
+    processedTraps[trap] = true
+
+    local cf, size = trap:GetBoundingBox()
+
+    local barrier = Instance.new("Part")
+    barrier.Name = "AEZY_TrapBarrier"
+    barrier.Size = size + Vector3.new(BARRIER_OFFSET*2, size.Y, BARRIER_OFFSET*2)
+    barrier.CFrame = cf
+    barrier.Anchored = true
+    barrier.CanCollide = true
+    barrier.Transparency = 0.8
+    barrier.Material = Enum.Material.ForceField
+    barrier.Color = Color3.fromRGB(0,255,0)
+    barrier.Parent = Workspace
+    barrier.CanTouch = false
+    barrier.CanQuery = false
+
+    local hl = Instance.new("Highlight")
+    hl.Adornee = barrier
+    hl.FillColor = Color3.fromRGB(0,255,0)
+    hl.OutlineColor = Color3.fromRGB(0,255,0)
+    hl.FillTransparency = 0.9
+    hl.Parent = barrier
+
+    trap.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            processedTraps[trap] = nil
+            if barrier then barrier:Destroy() end
+        end
+    end)
+end
+
+local function scanForTraps()
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name:lower():find("trap") then
+            if isTrapPlaced(obj) then
+                createTrapBarrier(obj)
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    task.wait(3)
+    while true do
+        scanForTraps()
+        task.wait(2)
+    end
+end)
+
+Workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("Model") and obj.Name:lower():find("trap") then
+        task.wait(0.5)
+        if isTrapPlaced(obj) then
+            createTrapBarrier(obj)
+        end
+    end
+end)
