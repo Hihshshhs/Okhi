@@ -1,185 +1,47 @@
--- Beam + Highlight Script [FIXED - with Stolen filter]
-local Workspace = game:GetService("Workspace")
-local Players = game:GetService("Players")
+-- =============================================
+-- DESYNC - Part 1: Synchronizer Hook
+-- (Disables server-side sync checks)
+-- =============================================
+if not game:IsLoaded() then game.Loaded:Wait() end
 
-local player = Players.LocalPlayer
-
-local beamFolder = Workspace:FindFirstChild("__BeamFolder__") or Instance.new("Folder")
-beamFolder.Name = "__BeamFolder__"
-beamFolder.Parent = Workspace
-
-local beamPet, beamBase
-local attPlayerPet, attPet
-local attPlayerBase, attBase
-local highlight = nil
-
-local function getRootPart()
-	local char = player.Character
-	return char and char:FindFirstChild("HumanoidRootPart")
+do
+    local Sync = require(game.ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Synchronizer"))
+    for _, fn in pairs(Sync) do
+        if typeof(fn) == "function" and not isexecutorclosure(fn) then
+            local ok, ups = pcall(debug.getupvalues, fn)
+            if ok then
+                for i, v in pairs(ups) do
+                    if typeof(v) == "function" then
+                        local ok2, inner = pcall(debug.getupvalues, v)
+                        if ok2 then
+                            for _, val in pairs(inner) do
+                                if typeof(val) == "boolean" then
+                                    debug.setupvalue(fn, i, newcclosure(function() end))
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
-local function FindDelivery()
-	local plots = Workspace:FindFirstChild("Plots")
-	if not plots then return nil end
-	for _, plot in pairs(plots:GetChildren()) do
-		local sign = plot:FindFirstChild("PlotSign")
-		if sign then
-			local yourBase = sign:FindFirstChild("YourBase")
-			if yourBase and yourBase.Enabled then
-				return plot:FindFirstChild("DeliveryHitbox")
-			end
-		end
-	end
-	return nil
+-- =============================================
+-- DESYNC - Part 2: RakNet Packet Hook
+-- (Zeroes out position data in movement packets)
+-- =============================================
+local function rakhook(packet)
+    if packet.PacketId == 0x1B then
+        local data = packet.AsBuffer
+        if buffer.readu32(data, 1) ~= 0 then
+            buffer.writeu32(data, 1, 0)
+            packet:SetData(data)
+        end
+    end
 end
 
-local multipliers = {k=1e3, m=1e6, b=1e9, t=1e12}
-local function parseGeneration(text)
-	if not text or type(text) ~= "string" then return 0 end
-	text = text:lower():gsub("/s",""):gsub(",",""):gsub("%s+","")
-	local number, suffix = text:match("([%d%.]+)([kmbt]?)")
-	number = tonumber(number)
-	if not number then return 0 end
-	if suffix and suffix ~= "" and multipliers[suffix] then
-		number = number * multipliers[suffix]
-	end
-	return number
-end
+pcall(function() raknet.add_send_hook(rakhook) end)
 
-local function makeBeam(color)
-	local b = Instance.new("Beam")
-	b.Color = ColorSequence.new(color)
-	b.Width0 = 0.9
-	b.Width1 = 0.9
-	b.LightEmission = 1
-	b.Transparency = NumberSequence.new(0)
-	b.FaceCamera = true
-	b.Parent = beamFolder
-	return b
-end
-
-local function updateBaseBeam()
-	local root = getRootPart()
-	local delivery = FindDelivery()
-	if not root or not delivery then return end
-
-	if not attPlayerBase or not attPlayerBase.Parent then
-		attPlayerBase = Instance.new("Attachment")
-		attPlayerBase.Name = "Att_PlayerBase"
-		attPlayerBase.Parent = root
-	end
-
-	if not attBase or not attBase.Parent then
-		attBase = Instance.new("Attachment")
-		attBase.Name = "Att_Base"
-		attBase.Parent = delivery
-	end
-
-	if not beamBase or not beamBase.Parent then
-		beamBase = makeBeam(Color3.fromRGB(0, 255, 0))
-		beamBase.Name = "BeamToBase"
-	end
-
-	beamBase.Attachment0 = attPlayerBase
-	beamBase.Attachment1 = attBase
-end
-
-local function updatePetBeam(targetPart)
-	local root = getRootPart()
-	if not root or not targetPart then return end
-
-	if not attPlayerPet or not attPlayerPet.Parent then
-		attPlayerPet = Instance.new("Attachment")
-		attPlayerPet.Name = "Att_PlayerPet"
-		attPlayerPet.Parent = root
-	end
-
-	if not attPet or attPet.Parent ~= targetPart then
-		attPet = Instance.new("Attachment")
-		attPet.Name = "Att_Pet"
-		attPet.Parent = targetPart
-	end
-
-	if not beamPet or not beamPet.Parent then
-		beamPet = makeBeam(Color3.fromRGB(255, 0, 0))
-		beamPet.Name = "BeamToPet"
-	end
-
-	beamPet.Attachment0 = attPlayerPet
-	beamPet.Attachment1 = attPet
-end
-
-local function updateHighlight(targetModel)
-	if not targetModel then return end
-	if highlight and highlight.Parent then
-		highlight.Parent = targetModel
-	else
-		highlight = Instance.new("Highlight")
-		highlight.FillColor = Color3.fromRGB(0, 120, 255)
-		highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-		highlight.FillTransparency = 0.4
-		highlight.OutlineTransparency = 0
-		highlight.Parent = targetModel
-	end
-end
-
-local function findBestPet()
-	local plots = Workspace:FindFirstChild("Plots")
-	if not plots then return end
-
-	local myDelivery = FindDelivery()
-	local bestValue = 0
-	local bestObj = nil
-
-	for _, plot in pairs(plots:GetChildren()) do
-		local delivery = plot:FindFirstChild("DeliveryHitbox")
-		if delivery == myDelivery then continue end
-
-		for _, obj in pairs(plot:GetDescendants()) do
-			if obj:IsA("TextLabel") and obj.Name == "Generation" then
-				local displayNameObj = obj.Parent:FindFirstChild("DisplayName")
-				if displayNameObj and displayNameObj.Text ~= "Lucky Block" then
-					-- STOLEN filter kept
-					local stolen = obj.Parent:FindFirstChild("Stolen")
-					if stolen and (stolen.Text == "STOLEN" or stolen.Text == "In Fuse") then
-						local value = parseGeneration(obj.Text)
-						if value > bestValue then
-							bestValue = value
-							bestObj = obj
-						end
-					end
-				end
-			end
-		end
-	end
-
-	if bestObj then
-		local model = bestObj:FindFirstAncestorWhichIsA("Model")
-		if model then
-			local targetPart = model:FindFirstChildWhichIsA("BasePart")
-			if targetPart then
-				updatePetBeam(targetPart)
-				updateHighlight(model)
-			end
-		end
-	end
-
-	updateBaseBeam()
-end
-
-task.spawn(function()
-	while true do
-		local ok, err = pcall(findBestPet)
-		if not ok then warn("[Beam] Error: " .. tostring(err)) end
-		task.wait(2)
-	end
-end)
-
-player.CharacterAdded:Connect(function(char)
-	char:WaitForChild("HumanoidRootPart", 10)
-	task.wait(1)
-	updateBaseBeam()
-	findBestPet()
-end)
-
-print("[Beam+Highlight] Running - Base: Green | Stolen Pet: Red | Highlight: Blue")
+print("Desync - Active")
