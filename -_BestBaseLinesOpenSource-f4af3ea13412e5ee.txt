@@ -1,0 +1,214 @@
+-- LocalScript - Beams persistentes (base + melhor pet) + Highlight azul
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+
+-- Referências globais
+local beamPet, beamBase
+local attPlayerPet, attPet
+local attPlayerBase, attBase
+local highlight = nil
+
+------------------------------------------------------------
+-- Função: encontra sua própria DeliveryHitbox (base)
+------------------------------------------------------------
+local function FindDelivery()
+	local plots = Workspace:FindFirstChild("Plots")
+	if not plots then return nil end
+	for _, plot in pairs(plots:GetChildren()) do
+		local sign = plot:FindFirstChild("PlotSign")
+		if sign then
+			local yourBase = sign:FindFirstChild("YourBase")
+			if yourBase and yourBase.Enabled then
+				local hitbox = plot:FindFirstChild("DeliveryHitbox")
+				if hitbox then return hitbox end
+			end
+		end
+	end
+	return nil
+end
+
+------------------------------------------------------------
+-- Converte texto "1.5b/s" → número real
+------------------------------------------------------------
+local multipliers = { k = 1e3, m = 1e6, b = 1e9, t = 1e12 }
+local function parseGeneration(text)
+	if not text or type(text) ~= "string" then return 0 end
+	text = text:lower():gsub("/s", ""):gsub(",", ""):gsub("%s+", "")
+	local number, suffix = text:match("([%d%.]+)([kmbt]?)")
+	number = tonumber(number)
+	if not number then return 0 end
+	if suffix ~= "" and multipliers[suffix] then
+		number = number * multipliers[suffix]
+	end
+	return number
+end
+
+------------------------------------------------------------
+-- Cria ou atualiza Beam da base (verde)
+------------------------------------------------------------
+local function updateBaseBeam()
+	local delivery = FindDelivery()
+	if not delivery or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+
+	-- recria attachments se personagem for novo
+	if not attPlayerBase or attPlayerBase.Parent ~= player.Character.HumanoidRootPart then
+		if attPlayerBase then attPlayerBase:Destroy() end
+		attPlayerBase = Instance.new("Attachment")
+		attPlayerBase.Name = "BeamAttachment_PlayerBase"
+		attPlayerBase.Parent = player.Character.HumanoidRootPart
+	end
+
+	if not attBase or attBase.Parent ~= delivery then
+		if attBase then attBase:Destroy() end
+		attBase = Instance.new("Attachment")
+		attBase.Name = "BeamAttachment_Base"
+		attBase.Parent = delivery
+	end
+
+	if not beamBase or not beamBase.Parent then
+		beamBase = Instance.new("Beam")
+		beamBase.Name = "BeamToBase"
+		beamBase.Attachment0 = attPlayerBase
+		beamBase.Attachment1 = attBase
+		beamBase.Color = ColorSequence.new(Color3.fromRGB(0, 255, 0)) -- verde
+		beamBase.Width0 = 0.9
+		beamBase.Width1 = 0.9
+		beamBase.LightEmission = 1
+		beamBase.Transparency = NumberSequence.new(0)
+		beamBase.FaceCamera = true
+		beamBase.Parent = Workspace
+	else
+		beamBase.Attachment0 = attPlayerBase
+		beamBase.Attachment1 = attBase
+	end
+end
+
+------------------------------------------------------------
+-- Cria ou atualiza Beam do melhor pet (vermelho)
+------------------------------------------------------------
+local function updatePetBeam(targetPart)
+	if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") or not targetPart then return end
+
+	if not attPlayerPet or attPlayerPet.Parent ~= player.Character.HumanoidRootPart then
+		if attPlayerPet then attPlayerPet:Destroy() end
+		attPlayerPet = Instance.new("Attachment")
+		attPlayerPet.Name = "BeamAttachment_PlayerPet"
+		attPlayerPet.Parent = player.Character.HumanoidRootPart
+	end
+
+	if not attPet or attPet.Parent ~= targetPart then
+		if attPet then attPet:Destroy() end
+		attPet = Instance.new("Attachment")
+		attPet.Name = "BeamAttachment_Pet"
+		attPet.Parent = targetPart
+	end
+
+	if not beamPet or not beamPet.Parent then
+		beamPet = Instance.new("Beam")
+		beamPet.Name = "BeamToPet"
+		beamPet.Attachment0 = attPlayerPet
+		beamPet.Attachment1 = attPet
+		beamPet.Color = ColorSequence.new(Color3.fromRGB(255, 0, 0)) -- vermelho
+		beamPet.Width0 = 0.9
+		beamPet.Width1 = 0.9
+		beamPet.LightEmission = 1
+		beamPet.Transparency = NumberSequence.new(0)
+		beamPet.FaceCamera = true
+		beamPet.Parent = Workspace
+	else
+		beamPet.Attachment0 = attPlayerPet
+		beamPet.Attachment1 = attPet
+	end
+end
+
+------------------------------------------------------------
+-- Cria ou atualiza o Highlight azul no melhor pet
+------------------------------------------------------------
+local function updateHighlight(targetModel)
+	if not targetModel then return end
+	if not highlight then
+		highlight = Instance.new("Highlight")
+		highlight.FillColor = Color3.fromRGB(0, 0, 255)
+		highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+		highlight.FillTransparency = 0.5
+		highlight.OutlineTransparency = 0
+		highlight.Parent = targetModel
+	else
+		if highlight.Adornee ~= targetModel then
+			highlight.Adornee = targetModel
+			highlight.Parent = targetModel
+		end
+	end
+end
+
+------------------------------------------------------------
+-- Encontra o melhor pet (ignora Lucky Block)
+------------------------------------------------------------
+local function findBestPet()
+	local plotsFolder = Workspace:FindFirstChild("Plots")
+	if not plotsFolder then return end
+
+	local myDelivery = FindDelivery()
+	local bestValue = 0
+	local bestObj = nil
+
+	for _, plot in pairs(plotsFolder:GetChildren()) do
+		local delivery = plot:FindFirstChild("DeliveryHitbox")
+		if delivery ~= myDelivery then
+			for _, obj in pairs(plot:GetDescendants()) do
+				if obj:IsA("TextLabel") and obj.Name == "Generation" then
+					local displayNameObj = obj.Parent:FindFirstChild("DisplayName")
+					if displayNameObj and displayNameObj.Text ~= "Lucky Block" then
+						local stolen = obj.Parent:FindFirstChild("Stolen")
+						if stolen and (stolen.Text == "STOLEN" or stolen.Text == "In Fuse") then
+							local value = parseGeneration(obj.Text)
+							if value > bestValue then
+								bestValue = value
+								bestObj = obj
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	if bestObj then
+		local model = bestObj:FindFirstAncestorWhichIsA("Model")
+		if model then
+			local targetPart = model:FindFirstChildWhichIsA("BasePart")
+			if targetPart then
+				updatePetBeam(targetPart)
+				updateHighlight(model)
+			end
+		end
+	end
+
+	updateBaseBeam()
+end
+
+------------------------------------------------------------
+-- Loop contínuo (independente de respawn)
+------------------------------------------------------------
+task.spawn(function()
+	while true do
+		findBestPet()
+		task.wait(2)
+	end
+end)
+
+------------------------------------------------------------
+-- Recria attachments/beams ao renascer
+------------------------------------------------------------
+player.CharacterAdded:Connect(function(char)
+	char:WaitForChild("HumanoidRootPart", 10)
+	task.wait(1)
+	updateBaseBeam()
+	task.wait(1)
+	findBestPet()
+end)
+
+print("[Beam+Highlight] Ativo — beams persistem após a morte (base verde, pet vermelho, highlight azul).")
