@@ -1,47 +1,321 @@
--- =============================================
--- DESYNC - Part 1: Synchronizer Hook
--- (Disables server-side sync checks)
--- =============================================
-if not game:IsLoaded() then game.Loaded:Wait() end
+-- [[ DEOBFUSCATED BY SOURCES HUB OWNER ]] --
 
-do
-    local Sync = require(game.ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Synchronizer"))
-    for _, fn in pairs(Sync) do
-        if typeof(fn) == "function" and not isexecutorclosure(fn) then
-            local ok, ups = pcall(debug.getupvalues, fn)
-            if ok then
-                for i, v in pairs(ups) do
-                    if typeof(v) == "function" then
-                        local ok2, inner = pcall(debug.getupvalues, v)
-                        if ok2 then
-                            for _, val in pairs(inner) do
-                                if typeof(val) == "boolean" then
-                                    debug.setupvalue(fn, i, newcclosure(function() end))
-                                    break
-                                end
-                            end
+-- // [1] SERVICES //
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- // [2] CONFIGURATION (EDIT EVERYTHING HERE) //
+local CONFIG = {
+    Names = {
+        ScreenGui = "CursedBoosterGui",
+        WatermarkGui = "CursedWatermark",
+        MainFrame = "MainFrame",
+        TopBar = "TopBar",
+        Avatar = "Avatar",
+        UsernameLabel = "UsernameLabel",
+        UserIdLabel = "UserIdLabel",
+        TitleLabel = "TitleLabel",
+        DiscordLabel = "DiscordLabel",
+        ButtonContainer = "ButtonContainer"
+    },
+
+    Size = {
+        MainFrame = UDim2.new(0, 230, 0, 490),
+        TopBar = UDim2.new(0.9, 0, 0, 60),
+        Avatar = UDim2.new(0, 45, 0, 45),
+        Button = UDim2.new(0.85, 0, 0, 35)
+    },
+
+    Position = {
+        MainFrame = UDim2.new(0.8, 0, 0.5, -245),
+        TopBar = UDim2.new(0.05, 0, 0, 10),
+        Avatar = UDim2.new(0, 7, 0.5, -22),
+        Username = UDim2.new(0, 55, 0.1, 0),
+        UserId = UDim2.new(0, 55, 0.5, 0),
+        Title = UDim2.new(0, 0, 0, 75),
+        Discord = UDim2.new(0, 0, 0, 116)
+    },
+
+    Colors = {
+        MainFrame = Color3.fromRGB(20, 20, 20),
+        TopBar = Color3.fromRGB(30, 30, 30),
+        AvatarBG = Color3.fromRGB(40, 40, 40),
+        TextPrimary = Color3.fromRGB(255, 255, 255),
+        TextSecondary = Color3.fromRGB(150, 150, 150),
+        Accent = Color3.fromRGB(180, 0, 0),
+        ButtonDefault = Color3.fromRGB(35, 35, 35),
+        ButtonSave = Color3.fromRGB(50, 10, 10),     -- Little dark red for SAVE button
+        TextNormal = Color3.fromRGB(220, 220, 220),
+        TextToggled = Color3.fromRGB(180, 0, 0)       -- Red text when active / clicked
+    },
+
+    ButtonTexts = {
+        "STRETCH REZ",
+        "NIGHT TIME",
+        "PURPLE SKY",
+        "FPS BOOSTER",
+        "ANTI-LAG (CLEAN)",
+        "SAVE CONFIG"
+    },
+
+    FPSUpdateInterval = 0.5
+}
+
+-- // [3] OBJECT REFERENCES //
+local ScreenGui, WatermarkGui, WatermarkLabel
+local MainFrame, TopBar, AvatarImage, UsernameLabel, UserIdLabel, TitleLabel, DiscordLabel
+local ButtonContainer
+local Buttons = {}
+local ButtonStates = {}
+
+local CurrentFPS = 60
+local LastFPSUpdate = 0
+
+-- // [4] UTILITY FUNCTIONS //
+local function createInstance(className, properties)
+    local inst = Instance.new(className)
+    for k, v in pairs(properties or {}) do inst[k] = v end
+    return inst
+end
+
+local function applyUICorner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 12)
+    c.Parent = parent
+end
+
+local function applyUIStroke(parent)
+    local s = Instance.new("UIStroke")
+    s.Color = CONFIG.Colors.Accent
+    s.Thickness = 2.5
+    s.Parent = parent
+end
+
+local function updateButtonVisual(button, isToggled)
+    button.TextColor3 = isToggled and CONFIG.Colors.TextToggled or CONFIG.Colors.TextNormal
+end
+
+local function updateFPS()
+    local now = tick()
+    if now - LastFPSUpdate >= CONFIG.FPSUpdateInterval then
+        CurrentFPS = math.floor(1 / RunService.Heartbeat:Wait())
+        if WatermarkLabel then
+            WatermarkLabel.Text = string.format("CURSED BOOSTER | %s | FPS: %d", LocalPlayer.Name, CurrentFPS)
+        end
+        LastFPSUpdate = now
+    end
+end
+
+local function makeDraggable(frame)
+    local dragging, dragInput, dragStart, startPos
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+local function setupWatermark()
+    WatermarkGui = createInstance("ScreenGui", {Name = CONFIG.Names.WatermarkGui, ResetOnSpawn = false, Parent = CoreGui})
+    WatermarkLabel = createInstance("TextLabel", {
+        Size = UDim2.new(0, 250, 0, 25),
+        Position = UDim2.new(1, -260, 1, -35),
+        BackgroundTransparency = 1,
+        Text = string.format("CURSED BOOSTER | %s | FPS: 60", LocalPlayer.Name),
+        TextColor3 = CONFIG.Colors.Accent,
+        Font = Enum.Font.Code,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        Parent = WatermarkGui
+    })
+end
+
+local function createButton(text, isSaveButton)
+    local btn = createInstance("TextButton", {
+        Size = CONFIG.Size.Button,
+        BackgroundColor3 = isSaveButton and CONFIG.Colors.ButtonSave or CONFIG.Colors.ButtonDefault,
+        Text = text,
+        TextColor3 = CONFIG.Colors.TextNormal,
+        Font = Enum.Font.SourceSansBold,
+        TextSize = 14,
+        AutoButtonColor = false,
+        Parent = ButtonContainer
+    })
+    applyUICorner(btn, 8)
+    return btn
+end
+
+-- // [5] GUI CREATION //
+local function createGUI()
+    ScreenGui = createInstance("ScreenGui", {Name = CONFIG.Names.ScreenGui, ResetOnSpawn = false, Parent = CoreGui})
+
+    MainFrame = createInstance("Frame", {
+        Name = CONFIG.Names.MainFrame,
+        Size = CONFIG.Size.MainFrame,
+        Position = CONFIG.Position.MainFrame,
+        BackgroundColor3 = CONFIG.Colors.MainFrame,
+        Active = true,
+        Parent = ScreenGui
+    })
+    applyUICorner(MainFrame, 12)
+    applyUIStroke(MainFrame)
+
+    TopBar = createInstance("Frame", {Name = CONFIG.Names.TopBar, Size = CONFIG.Size.TopBar, Position = CONFIG.Position.TopBar, BackgroundColor3 = CONFIG.Colors.TopBar, BackgroundTransparency = 0.5, Parent = MainFrame})
+    applyUICorner(TopBar, 12)
+
+    AvatarImage = createInstance("ImageLabel", {Name = CONFIG.Names.Avatar, Size = CONFIG.Size.Avatar, Position = CONFIG.Position.Avatar, BackgroundColor3 = CONFIG.Colors.AvatarBG, Image = "rbxthumb://type=AvatarHeadShot&id="..LocalPlayer.UserId.."&w=150&h=150", Parent = TopBar})
+    applyUICorner(AvatarImage, 999)
+
+    UsernameLabel = createInstance("TextLabel", {Name = CONFIG.Names.UsernameLabel, Size = UDim2.new(1, -60, 0.5, 0), Position = CONFIG.Position.Username, BackgroundTransparency = 1, Text = LocalPlayer.DisplayName, TextColor3 = CONFIG.Colors.TextPrimary, Font = Enum.Font.SourceSansBold, TextXAlignment = Enum.TextXAlignment.Left, Parent = TopBar})
+    UserIdLabel = createInstance("TextLabel", {Name = CONFIG.Names.UserIdLabel, Size = UDim2.new(1, 0, 0, 40), Position = CONFIG.Position.UserId, BackgroundTransparency = 1, Text = "@"..LocalPlayer.Name, TextColor3 = CONFIG.Colors.TextSecondary, Font = Enum.Font.SourceSans, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, Parent = TopBar})
+    TitleLabel = createInstance("TextLabel", {Name = CONFIG.Names.TitleLabel, Size = UDim2.new(1, 0, 0, 18), Position = CONFIG.Position.Title, BackgroundTransparency = 1, Text = "CURSED BOOSTER", TextColor3 = CONFIG.Colors.TextPrimary, Font = Enum.Font.SourceSansBold, TextSize = 20, Parent = MainFrame})
+    DiscordLabel = createInstance("TextLabel", {Name = CONFIG.Names.DiscordLabel, Size = UDim2.new(1, 0, 0, 18), Position = CONFIG.Position.Discord, BackgroundTransparency = 1, Text = "discord.gg/cursedhub", TextColor3 = CONFIG.Colors.Accent, Font = Enum.Font.SourceSans, TextSize = 14, Parent = MainFrame})
+
+    ButtonContainer = createInstance("Frame", {Name = CONFIG.Names.ButtonContainer, Size = UDim2.new(1, 0, 1, -142), Position = UDim2.new(0, 0, 0, 140), BackgroundTransparency = 1, Parent = MainFrame})
+    local list = Instance.new("UIListLayout")
+    list.Padding = UDim.new(0, 6)
+    list.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    list.Parent = ButtonContainer
+
+    for i, text in ipairs(CONFIG.ButtonTexts) do
+        local isSave = (i == 6)
+        local btn = createButton(text, isSave)
+        Buttons[i] = btn
+        ButtonStates[i] = false
+    end
+
+    makeDraggable(MainFrame)
+end
+
+-- // [6] FUNCTIONALITY //
+local function setupButtons()
+    for i, button in ipairs(Buttons) do
+        button.MouseButton1Click:Connect(function()
+            if i == 6 then -- SAVE CONFIG
+                print("[CURSED BOOSTER] Config saved!")
+                
+                -- Make text red on click
+                button.TextColor3 = CONFIG.Colors.TextToggled
+                button.Text = "SAVED!"
+                
+                task.wait(1.5)
+                
+                -- Reset
+                button.Text = CONFIG.ButtonTexts[i]
+                button.TextColor3 = CONFIG.Colors.TextNormal
+                return
+            end
+
+            -- Toggle logic for other buttons
+            ButtonStates[i] = not ButtonStates[i]
+            updateButtonVisual(button, ButtonStates[i])
+
+            if i == 1 then -- STRETCH REZ
+                local cam = Workspace.CurrentCamera
+                if cam then cam.FieldOfView = ButtonStates[i] and 120 or 70 end
+
+            elseif i == 2 then -- NIGHT TIME
+                if ButtonStates[i] then
+                    Lighting.ClockTime = 0
+                    Lighting.Brightness = 0.2
+                    Lighting.Ambient = Color3.fromRGB(20, 20, 35)
+                else
+                    Lighting.ClockTime = 14
+                    Lighting.Brightness = 2
+                    Lighting.Ambient = Color3.fromRGB(0.5, 0.5, 0.5)
+                end
+
+            elseif i == 3 then -- PURPLE SKY
+                if ButtonStates[i] then
+                    Lighting.Ambient = Color3.fromRGB(60, 30, 90)
+                    Lighting.FogColor = Color3.fromRGB(80, 40, 120)
+                    local sky = Lighting:FindFirstChildOfClass("Sky") or Instance.new("Sky")
+                    sky.SkyboxBk = "rbxassetid://1534951537"
+                    sky.SkyboxDn = "rbxassetid://1534951537"
+                    sky.SkyboxFt = "rbxassetid://1534951537"
+                    sky.SkyboxLf = "rbxassetid://1534951537"
+                    sky.SkyboxRt = "rbxassetid://1534951537"
+                    sky.SkyboxUp = "rbxassetid://1534951537"
+                    sky.StarCount = 8000
+                    sky.Parent = Lighting
+
+                    local cc = Lighting:FindFirstChildOfClass("ColorCorrectionEffect") or Instance.new("ColorCorrectionEffect")
+                    cc.TintColor = Color3.fromRGB(180, 140, 255)
+                    cc.Saturation = 0.6
+                    cc.Contrast = 0.15
+                    cc.Parent = Lighting
+                else
+                    Lighting.Ambient = Color3.fromRGB(0.5, 0.5, 0.5)
+                    Lighting.FogColor = Color3.fromRGB(0.75, 0.75, 0.75)
+                end
+
+            elseif i == 4 then -- FPS BOOSTER
+                if ButtonStates[i] then
+                    settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+                    Lighting.GlobalShadows = false
+                    Lighting.Brightness = 3
+                    Lighting.FogEnd = 9000000000
+                    Lighting.Technology = Enum.Technology.Legacy
+                    Lighting.EnvironmentDiffuseScale = 0
+                    Lighting.EnvironmentSpecularScale = 0
+                else
+                    settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+                    Lighting.GlobalShadows = true
+                    Lighting.Brightness = 2
+                    Lighting.FogEnd = 100000
+                    Lighting.Technology = Enum.Technology.ShadowMap
+                end
+
+            elseif i == 5 then -- ANTI-LAG (CLEAN)
+                if ButtonStates[i] then
+                    for _, obj in ipairs(Workspace:GetDescendants()) do
+                        if obj:IsA("ParticleEmitter") or obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("Beam") or obj:IsA("Fire") then
+                            obj:Destroy()
                         end
                     end
+                    print("[CURSED BOOSTER] ANTI-LAG cleanup finished")
+                    ButtonStates[i] = false
+                    updateButtonVisual(button, false)
                 end
             end
-        end
+        end)
     end
 end
 
--- =============================================
--- DESYNC - Part 2: RakNet Packet Hook
--- (Zeroes out position data in movement packets)
--- =============================================
-local function rakhook(packet)
-    if packet.PacketId == 0x1B then
-        local data = packet.AsBuffer
-        if buffer.readu32(data, 1) ~= 0 then
-            buffer.writeu32(data, 1, 0)
-            packet:SetData(data)
-        end
-    end
+local function setupFPSCounter()
+    RunService.RenderStepped:Connect(updateFPS)
 end
 
-pcall(function() raknet.add_send_hook(rakhook) end)
+-- // [7] INITIALIZATION //
+local function init()
+    setupWatermark()
+    createGUI()
+    setupButtons()
+    setupFPSCounter()
 
-print("Desync - Active")
+    print("[CURSED BOOSTER] Loaded - SAVE CONFIG button is dark red. Click to flash red text + SAVED!")
+end
+
+init()
